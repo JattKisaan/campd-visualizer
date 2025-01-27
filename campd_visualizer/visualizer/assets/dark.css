@@ -1,0 +1,57 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #111111;
+    color: #FFFFFF;
+}
+h1, label {
+    color: #FFFFFF;
+}
+.main-container {
+  width: 80vw;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #111111;
+  color: #FFFFFF;
+}
+
+.header {
+  margin: 20px 0;
+}
+
+.map-container {
+  width: 100%;
+  height: 45vw;
+  margin: 50px 0;
+}
+
+/* Side panel containing the input panel and graph container */
+.graph-row {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+}
+
+/* Input panel (the left column) */
+.input-panel {
+  display: flex;
+  flex-direction: column;
+  width: 20%;
+  margin-right: 20px;
+}
+/* Each input group within the input panel */
+.input-elem {
+  margin: 10px 0;
+}
+
+.dropdown {
+  background-color: #FFFFFF;
+  color: #111111;
+}
+
+/* Graph container (right column) */
+.graph-container {
+  width: 80%;
+}

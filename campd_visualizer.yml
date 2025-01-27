@@ -1,0 +1,34 @@
+name: campd_visualizer
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - cython
+  - sympy
+  - pandas
+  - dask
+  - pyarrow
+  - sqlalchemy
+  - oracledb
+  - psycopg2
+  - duckdb
+  - scikit-learn
+  - ipdb
+# This is all for getting jupyterlab to work
+  - ipympl
+  - ipython
+  - jupyterlab
+  - jupyterlab_code_formatter
+  - black
+  - isort
+###
+  - matplotlib
+  - seaborn
+  - plotly
+  - dash
+  - dash-leaflet
+  - pip
+  - pip:
+    #- pyransac3d
