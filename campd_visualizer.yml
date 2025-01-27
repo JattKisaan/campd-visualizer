@@ -1,0 +1,17 @@
+name: campd_visualizer
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - ipdb
+  - numpy
+  - pandas
+  - dask
+  - pyarrow
+  - duckdb
+  - matplotlib
+  - plotly
+  - dash
+  - dash-extensions
+  - dash-leaflet

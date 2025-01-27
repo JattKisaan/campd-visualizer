@@ -1,0 +1,55 @@
+# ignore downloaded csvs and built databases
+campd_visualizer/data/*csv
+campd_visualizer/data/*db
+
+# ignore downloaded csvs and built databases
+campd_visualizer/data/*.csv
+campd_visualizer/data/*.zip
+
+# ignore all keys
+campd_visualizer/keys/*
+
+# temp files
+*temp.*
+*test.*
+*delete.*
+
+### BOILERPLATE ###
+
+# Visual Studio Code settings
+.vscode/
+
+# Python specific
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+*.venv
+*.egg-info/
+*.eggs/
+*.coverage
+*.cache
+*.pytest_cache/
+*.mypy_cache/
+*.ipynb_checkpoints/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints/
