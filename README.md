@@ -115,7 +115,7 @@ the data in the file or not. This is analogous to an SQL index, but parquet does
 automatically. Still, when you know that queries will occur along certain dimensions,
 say Year or State, you can manually specify these columns as partition column(s). So if you partition
 on the Year column, for example, the
-parquet dataformat will break your data which spans over N years into one or more files in N
+parquet data format will break your data which spans over N years into one or more files in N
 separate subdirectories. So for queries asking for data in 2003, for example, would only read the files
 in the subdirectory `Year=2003`, and parquet readers can intelligently leverage this information. 
 The most common implementation of this is called Hive Partitioning. The name "Hive" is probably an arbitrary historical artifact.
@@ -192,4 +192,4 @@ app. The callbacks take some experience getting used to if you've never done any
 I'm alright with the implementation so far, with the exception of the `CircleMarker` objects. 
 Whenever the start or end dates are changed, these have to be redrawn, and some [light searching](https://www.google.com/search?q=circlemarker+slow+update+dash-leaflet&rlz=1C1GCEA_enUS1141US1141&oq=circlemarker+slow+update+dash-leaflet&gs_lcrp=EgZjaHJvbWUyBggAEEUYOdIBCDkxODJqMGo5qAIAsAIB&sourceid=chrome&ie=UTF-8) suggested that this is quite slow. 
 I have noticed this to be a really annoying issue, especially on laptops of normal computational power.
-The consensus seems that a much faster approach would be to use GEOjson to draw these points on the map. Perhaps I'll get around to fixing this at some point.
+The consensus seems that a much faster approach would be to use [GeoJSON](https://www.dash-leaflet.com/docs/geojson_tutorial) to draw these points on the map. Perhaps I'll get around to fixing this at some point.
