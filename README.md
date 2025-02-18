@@ -44,7 +44,7 @@ before proceeding to the code below.
 
 The data is made public in uncompressed `csv` files. This is a poor choice, as the
 entirety of the data totals to about 200GB, which is only 9GB when zipped.
-Therefore, the scipt located in
+Therefore, the script located in
 
     campd_visualizer/scripts/get_campd_data.py
 
