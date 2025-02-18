@@ -27,7 +27,14 @@ much. If you use Windows, maybe [don't](https://ubuntu.com/tutorials/install-ubu
 
 You will also have to install this python package as well so that python knows where to
 look to execute the import statements. You can do this by navigating to the root
-directory, the one with `setup.py`, starting your python environment, and running
+directory, the one with `setup.py`. 
+
+Create and start the python environment with 
+
+    conda env create -f campd_visualizer.yml
+    conda activate campd_visualizer
+
+Then, run
 
     pip install -e .
 
