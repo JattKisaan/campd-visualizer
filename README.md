@@ -78,6 +78,10 @@ I suppose if you really wanted to be precise,
 you could store the download time in a file for each quarterly csv so it can't be accidentally changed if you muck about with the files.
 But I am okay with this. 
 
+Another consideration is that if the download is interrupted and only partially downloaded, checking the timestamps alone 
+may not be a reliable way to ensure you have all of the data. In the case that a download is interrupted, I would suggest you delete the last downloaded file and run the
+download script again.
+
 # Considerations for Selecting the Parquet Data Format
 
 After the data is downloaded, there is a question about how it should be accessed.
