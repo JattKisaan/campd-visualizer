@@ -63,10 +63,9 @@ files, which are downloaded in the same manner.
 
 A comment on how the download script is implemented: I check 
 the modification time of the local zip file, if it exists, 
-and compares it with the "last updated" time of 
+and compare it with the "last updated" time of 
 the corresponding quarterly csv on the EPA server. 
-If and only if the file on the server is more recent than your local file
-, it will download the file. This 
+If and only if the file on the server is more recent than your local file, it will download the file. This 
 means that if you run the script after it completes 
 succesfully, it should download nothing. This makes it easy 
 to update your dataset when the EPA updates the 
@@ -116,14 +115,17 @@ the data in the file or not. This is analogous to an SQL index, but parquet does
 automatically. Still, when you know that queries will occur along certain dimensions,
 say Year or State, you can manually specify these columns as partition column(s). So if you partition
 on the Year column, for example, the
-parquet dataformat will break your data which spans over N years into N files in N
-subdirectories, and parquet readers can intelligently leverage this information. The most common implementation of this is called Hive Partitioning. The name "Hive" is probably an arbitrary historical artifact.
+parquet dataformat will break your data which spans over N years into one or more files in N
+separate subdirectories. So for queries asking for data in 2003, for example, would only read the files
+in the subdirectory `Year=2003`, and parquet readers can intelligently leverage this information. 
+The most common implementation of this is called Hive Partitioning. The name "Hive" is probably an arbitrary historical artifact.
 
-You can actually issue standard SQL queries to a parquet dataset
+To complete the case for using parquet files, observe that you can actually issue standard 
+SQL queries to a parquet dataset
 through a popular tool called `duckdb`. And so for the user, there is very little
 difference getting data from an SQL database or from a parquet dataset. There seems to
-be no performance loss using `duckdb` and parquet files either. And all this, without
-having to deal with oversized files. I believe this is a winner, and so I will show you how
+be no performance loss using `duckdb` and parquet files either. And we can have all this without
+having to deal with oversized files. I believe this is a winner, so I'll show you how
 to make this dataset.
 
 # Preparing the Data for Analysis and Visualization
