@@ -1,8 +1,5 @@
 #!/usr/bin/env python
-import cProfile
-import json
 import os
-import pstats
 import time
 from datetime import date, datetime
 
@@ -10,12 +7,14 @@ import campd_visualizer.pkg.constants as constants
 import dash
 import dash_leaflet as dl
 import duckdb
+import matplotlib as mpl
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from dash import Dash, Input, Output, State, callback_context, ctx, dcc, html
-from dash.dependencies import ALL, MATCH
+from dash import Dash, Input, Output, State, callback_context, dcc, html
+from dash_extensions.javascript import assign
 from plotly import colors as pcolors
 
 # os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
@@ -209,8 +208,6 @@ DISTINCT_STATES = np.sort(
     query(q).values.squeeze(1),
 )
 
-######
-
 
 def get_facilities(start_date, end_date):
     """
@@ -244,7 +241,82 @@ def get_facilities(start_date, end_date):
     return df
 
 
-@timeit
+def get_geojson_data(start_date, end_date):
+    df = get_facilities(start_date, end_date)
+    adjusted_df = adjust_facility_markers(df)
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [row["Plot Longitude"], row["Plot Latitude"]],
+            },
+            "properties": {
+                "state": row["State"],
+                "facility_name": row["Facility Name"],
+                "unit_id": row["Unit ID"],
+                "primary_fuel": row["Primary Fuel Type"],
+            },
+        }
+        for _, row in adjusted_df.iterrows()
+    ]
+
+    plants_geojson_data = {"type": "FeatureCollection", "features": features}
+    return plants_geojson_data
+
+
+# ------------------------------------------------------------------------------
+# 2. Build a categorical color map using matplotlib’s viridis palette
+# ------------------------------------------------------------------------------
+df = get_facilities("2023-01-01", "2023-12-31")
+fuel_types = df["Primary Fuel Type"].dropna().unique().tolist()
+fuel_types.sort()  # sort for consistency
+n = len(fuel_types)
+
+# Sample n distinct colors from viridis
+colors = mpl.colormaps["viridis"].resampled(n)
+colors = [colors(i) for i in range(n)]
+color_map = {fuel: mcolors.to_hex(color) for fuel, color in zip(fuel_types, colors)}
+
+######
+
+# ------------------------------------------------------------------------------
+# 3. Define clientside logic to pick each feature’s color from color_map
+# ------------------------------------------------------------------------------
+point_to_layer = assign(
+    """
+    function(feature, latlng, context){
+        // Make a copy of the circle options
+        const circleOptions = {...context.hideout.circleOptions};
+        // Pull out the colorMap we passed in via "hideout"
+        const colorMap = context.hideout.colorMap;
+        const fuelType = feature.properties.primary_fuel;
+
+        // If the fuel type is in our map, use that color; otherwise a fallback
+        circleOptions.fillColor = colorMap[fuelType] || "#333333";
+
+        // Return a Leaflet circle marker
+        return L.circleMarker(latlng, circleOptions);
+    }
+    """
+)
+
+# For a tooltip, we can keep it simple:
+on_each_feature = assign(
+    """
+    function(feature, layer){
+        layer.bindTooltip(
+            feature.properties.state + ", " +
+            feature.properties.facility_name + ", " +
+            feature.properties.unit_id +
+            "<br>" +
+            feature.properties.primary_fuel
+        );
+    }
+    """
+)
+
+
 def get_emissions(pollutant_col, state, plant, start_date, end_date):
     start_year = pd.to_datetime(start_date).year
     end_year = pd.to_datetime(end_date).year
@@ -287,6 +359,19 @@ colors_list = [rgba_to_hex(rgba) for rgba in viridis_rgba]
 primary_fuel_colors_dict = dict(zip(primary_fuel_types, colors_list))
 
 
+plants_geojson_data = get_geojson_data("2023-01-01", "2023-12-31")
+geojson = dl.GeoJSON(
+    id="us-map-markers",
+    data=plants_geojson_data,
+    zoomToBounds=False,
+    pointToLayer=point_to_layer,
+    onEachFeature=on_each_feature,
+    hideout={
+        "circleOptions": {"fillOpacity": 1, "stroke": False, "radius": 8},
+        "colorMap": color_map,
+    },
+)
+
 app = Dash(__name__)
 app.title = "CAMPD Visualizer"
 
@@ -296,12 +381,16 @@ app.layout = html.Div(
         html.H1("CAMPD Visualizer", className="header"),
         dcc.Store(id="date-store", data={"start_date": None, "end_date": None}),
         dcc.Store(id="plant-change-store", data={"fromMarker": False}),
+        dcc.Store(id="state-change-store", data={"fromMarker": False}),
         dl.Map(
             id="us-map",
             center=[35, -100],
             zoom=4,
             className="map-container",
-            children=[TILE],
+            children=[
+                TILE,
+                geojson,
+            ],
         ),
         html.Div(
             className="graph-row",
@@ -357,7 +446,7 @@ app.layout = html.Div(
                                         {"label": st, "value": st}
                                         for st in DISTINCT_STATES
                                     ],
-                                    value=None,
+                                    value="AL",
                                 ),
                             ],
                         ),
@@ -385,68 +474,37 @@ app.layout = html.Div(
 )
 
 
-@timeit
-def make_markers(df):
-    markers = []
-
-    for _, fac in df.iterrows():
-        marker_id = {
-            "type": "facility-marker",
-            "index": f"{fac['State']}|{fac['Facility Name'].replace('.', '_DOT_')}|{fac['Unit ID']}",
-        }
-        markers.append(
-            dl.CircleMarker(
-                id=marker_id,
-                center=[fac["Plot Latitude"], fac["Plot Longitude"]],
-                radius=8,
-                color=primary_fuel_colors_dict.get(fac["Primary Fuel Type"], "#000000"),
-                fill=True,
-                fillOpacity=1,
-                stroke=False,
-                children=dl.Tooltip(
-                    content=(
-                        f"{fac['Facility Name']}, {fac['Unit ID']}<br>"
-                        f"{fac['State']}, {fac['Primary Fuel Type']}"
-                    ),
-                ),
-            )
-        )
-    return markers
-
-
-@app.callback(
-    Output("plant-dropdown", "options"),
-    Output("plant-dropdown", "value"),
-    [
-        Input("state-dropdown", "value"),
-    ],
-    State("start-date-picker", "date"),
-    State("end-date-picker", "date"),
-)
-@timeit
-def update_dropdown(
-    state_val,
-    start_date,
-    end_date,
-):
-    if state_val:
-        df = get_facilities(start_date, end_date)
-        df_state = df[df["State"] == state_val]
-        plants = sorted(df_state["Facility Name"].dropna().unique())
-        plant_opts = [{"label": p, "value": p} for p in (["ALL"] + plants)]
-        if plants:
-            new_plant = plants[0]
-        else:
-            new_plant = "ALL"
-    else:
-        plant_opts = []
-        new_plant = None
-
-    return plant_opts, new_plant
+# @timeit
+# def make_markers(df):
+#    markers = []
+#
+#    for _, fac in df.iterrows():
+#        marker_id = {
+#            "type": "facility-marker",
+#            "index": f"{fac['State']}|{fac['Facility Name'].replace('.', '_DOT_')}|{fac['Unit ID']}",
+#        }
+#        markers.append(
+#            dl.CircleMarker(
+#                id=marker_id,
+#                center=[fac["Plot Latitude"], fac["Plot Longitude"]],
+#                radius=8,
+#                color=primary_fuel_colors_dict.get(fac["Primary Fuel Type"], "#000000"),
+#                fill=True,
+#                fillOpacity=1,
+#                stroke=False,
+#                children=dl.Tooltip(
+#                    content=(
+#                        f"{fac['Facility Name']}, {fac['Unit ID']}<br>"
+#                        f"{fac['State']}, {fac['Primary Fuel Type']}"
+#                    ),
+#                ),
+#            )
+#        )
+#    return markers
 
 
 @app.callback(
-    Output("us-map", "children"),
+    Output("us-map-markers", "data"),
     Output("us-map", "center"),
     Output("date-store", "data"),
     Output("plant-change-store", "data"),
@@ -493,55 +551,121 @@ def update_map(
     )
 
     if start_date and end_date and dates_changed:
-        # print("RECALCULATING MARKERS")
-        df = adjust_facility_markers(get_facilities(start_date, end_date))
-        new_map_children = [TILE] + make_markers(df)
+        plants_geojson_data = get_geojson_data(start_date, end_date)
+        new_plants_geojson_data = plants_geojson_data
         new_stored_dates = {"start_date": start_date, "end_date": end_date}
     else:
-        new_map_children = dash.no_update
+        new_plants_geojson_data = dash.no_update
         new_stored_dates = dash.no_update
 
     print(
         f"""
+    ### Inputs
+    plant = {plant}
+    start_date = {start_date}
+    end_date = {end_date}
+    state = {state}
+    stored_dates = {stored_dates}
     click_bool = {click_bool}
+    ### Outputs
+    new_plants_geojson_data = {new_plants_geojson_data}
+    new_center = {new_center}
+    new_stored_dates = {new_stored_dates}
     new_click_bool = {new_click_bool}
     """
     )
-    return new_map_children, new_center, new_stored_dates, new_click_bool
+    return new_plants_geojson_data, new_center, new_stored_dates, new_click_bool
+
+
+@app.callback(
+    Output("plant-dropdown", "options"),
+    Output("plant-dropdown", "value"),
+    Output("state-change-store", "data"),
+    [
+        Input("state-dropdown", "value"),
+        Input("start-date-picker", "date"),
+        Input("end-date-picker", "date"),
+    ],
+    State("state-change-store", "data"),
+)
+@timeit
+def update_dropdown(
+    state_val,
+    start_date,
+    end_date,
+    click_bool,
+):
+    if state_val and start_date and end_date:
+        df = get_facilities(start_date, end_date)
+        df_state = df[df["State"] == state_val]
+        plants = sorted(df_state["Facility Name"].dropna().unique())
+        if plants:
+            new_plant = plants[0]
+            plant_opts = [{"label": p, "value": p} for p in (["ALL"] + plants)]
+        else:
+            new_plant = None
+            plant_opts = []
+    else:
+        new_plant = dash.no_update
+        plant_opts = dash.no_update
+
+    if (
+        "start-date-picker" == callback_context.triggered_id
+        or "end-date-picker" == callback_context.triggered_id
+    ):
+        new_plant = dash.no_update
+
+    if click_bool["fromMarker"]:
+        new_plant = dash.no_update
+        new_click_bool = {"fromMarker": False}
+    else:
+        new_click_bool = dash.no_update
+
+    print(
+        f"""
+    ### Inputs
+    state_val = {state_val}
+    start_date = {start_date}
+    end_date = {end_date}
+    click_bool = {click_bool}
+    ### Outputs
+    plant-dropdown.options = TOO LONG
+    plant-dropdown.value = {new_plant}
+    state-change-store = {new_click_bool}
+    """
+    )
+    return plant_opts, new_plant, new_click_bool
 
 
 @app.callback(
     Output("plant-dropdown", "value", allow_duplicate=True),
     Output("state-dropdown", "value"),
     Output("plant-change-store", "data", allow_duplicate=True),
+    Output("state-change-store", "data", allow_duplicate=True),
     [
-        Input({"type": "facility-marker", "index": ALL}, "n_clicks"),
+        Input("us-map-markers", "clickData"),
     ],
-    State({"type": "facility-marker", "index": ALL}, "id"),
     prevent_initial_call=True,
 )
 @timeit
 def update_on_click(
-    marker_click,
-    marker_id,
+    click_data,
 ):
-    triggered_id = ctx.triggered_id
 
-    n_click_triggered = [
-        n_click for n_click, id in zip(marker_click, marker_id) if id == triggered_id
-    ][0]
-    if n_click_triggered:
-        new_state, new_plant, _ = triggered_id["index"].split("|")
-        click_bool = {"fromMarker": True}
-    else:
-        new_state, new_plant = dash.no_update, dash.no_update
-        click_bool = dash.no_update
+    new_state, new_plant = [
+        click_data["properties"][key] for key in ["state", "facility_name"]
+    ]
+    click_bool_plant = {"fromMarker": True}
+    state_bool_plant = {"fromMarker": True}
     print(
         f"""
-    click_bool = {click_bool}
+    new_plant = {new_plant}
+    new_state = {new_state}
+    click_bool_plant = {click_bool_plant}
+    state_bool_plant = {state_bool_plant}
     """
     )
-    return new_plant, new_state, click_bool
+    return new_plant, new_state, click_bool_plant, state_bool_plant
 
 
 @app.callback(
