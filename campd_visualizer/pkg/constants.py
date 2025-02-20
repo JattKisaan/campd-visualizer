@@ -94,7 +94,7 @@ FACILITIES_COLUMNS_AND_TYPES = [
     ("Unit ID"                                           , "text"),
      
     ("Associated Stacks"                                 , "text"),
-    ("Year"                                              , "date"),
+    ("Year"                                              , "int"),
     ("Program Code"                                      , "text"),
     ("Primary Rep Info"                                  , "text"),
      

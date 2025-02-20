@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# import cProfile
 import os
 import time
 from datetime import date, datetime
@@ -8,6 +8,7 @@ import dash
 import dash_leaflet as dl
 import duckdb
 import matplotlib as mpl
+import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -15,23 +16,17 @@ from dash import Dash, Input, Output, State, callback_context, dcc, html
 from dash_extensions.javascript import assign
 from plotly import colors as pcolors
 
-os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
+os.environ["PYTHONBREAKPOINT"] = "IPython.embed"
 
 
-# ------------------------------------------------------------------------------
-# BASIC QUERY & HELPER FUNCTIONS
-# ------------------------------------------------------------------------------
+# import pstats
 def query(q, columns_and_types=None):
     conn = duckdb.connect()
     df = conn.execute(q).df().replace("", pd.NA)
     conn.close()
 
     if columns_and_types:
-        # This needs to be manually added because the raw EPA data doesn't
-        # include this Year column, it's only added as a partition column
-        # during the parquet dataset creation.
         columns_and_types = [c for c in columns_and_types if c[0] in df.columns]
-
         dtypes = {c[0]: constants.TYPE_DICT["pandas"][c[1]] for c in columns_and_types}
         df = df.astype(dtypes)
 
@@ -54,99 +49,132 @@ def timeit(func):
     return wrapper
 
 
-# ------------------------------------------------------------------------------
-# GLOBAL CONSTANTS / CONFIG
-# ------------------------------------------------------------------------------
 MAX_PLOTLY_POINTS = 1_000_000
 
-DISTINCT_STATES = np.sort(
-    query(
-        f'SELECT DISTINCT "State" FROM {constants.FACILITIES_TABLE}',
-    ).values.squeeze(1)
+DF_ALL_FAC = query(
+    f"""
+    SELECT "State","Facility Name","Unit ID","Primary Fuel Type","Latitude","Longitude","Year"
+    FROM {constants.FACILITIES_TABLE}""",
+    columns_and_types=constants.FACILITIES_COLUMNS_AND_TYPES,
 )
+
+q = """
+SELECT DISTINCT "State"
+FROM DF_ALL_FAC
+"""
+DISTINCT_STATES = np.sort(query(q).values.squeeze(1))
 
 DISTINCT_FUELS = np.sort(
     query(
-        f"""SELECT DISTINCT "Primary Fuel Type"
-        FROM {constants.FACILITIES_TABLE}
-        WHERE "Primary Fuel Type" IS NOT NULL""",
+        """SELECT DISTINCT "Primary Fuel Type"
+              FROM DF_ALL_FAC
+              WHERE "Primary Fuel Type" IS NOT NULL
+           """
     ).values.squeeze(1)
 )
+
 n = len(DISTINCT_FUELS)
 colors_list = mpl.colormaps["viridis"].resampled(n)
-colors_list = [colors_list(i) for i in range(n)]
+colors_list = [mcolors.to_hex(colors_list(i)) for i in range(n)]
 FUEL_COLORS_DICT = dict(zip(DISTINCT_FUELS, colors_list))
+
 
 POLLUTANT_OPTIONS = {
     "NOx Rate (lbs/mmBtu)": "NOx Rate (lbs/mmBtu)",
     "SO2 Rate (lbs/mmBtu)": "SO2 Rate (lbs/mmBtu)",
 }
 
-TILE = dl.TileLayer(
-    url="https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}{r}.jpg",
-    maxZoom=20,
-    attribution="""\
-&copy; CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)
-| &copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a>
-&copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a>
-&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
-""",
-)
 
+def process_grp_vectorized(grp, avg_window, pollutant_col):
+    # Convert threshold to nanoseconds (int64)
+    # This is one hour in nanoseconds, as you can get from
+    # grp["Datetime"].diff().mode().astype('int64').iloc[0]
+    threshold_ns = 3600000000000
 
-# ------------------------------------------------------------------------------
-# PLOTTING HELPERS
-# ------------------------------------------------------------------------------
-def insert_gaps(x_list, y_list, threshold):
-    if not x_list:
-        return x_list, y_list
-    new_x, new_y = [x_list[0]], [y_list[0]]
-    for i in range(1, len(x_list)):
-        if x_list[i] - x_list[i - 1] > threshold:
-            new_x.append(None)
-            new_y.append(None)
-        new_x.append(x_list[i])
-        new_y.append(y_list[i])
-    return new_x, new_y
+    _times = grp["Datetime"].to_numpy().astype("int64")
+    _vals = grp[pollutant_col].to_numpy().astype(float)
 
+    n_total = len(_times)
+    diffs = np.diff(_times)
 
-def average_contiguous_points(x, y, window):
-    L = len(x)
-    if L == 0:
-        return np.array([], dtype=x.dtype), np.array([], dtype=y.dtype)
-    groups = np.arange(L) // window
-    x_int = x.astype("int64")
-    sum_x = np.bincount(groups, weights=x_int)
-    count_x = np.bincount(groups)
-    avg_x_int = sum_x / count_x
-    avg_x = avg_x_int.astype("int64").view("datetime64[ns]")
-    sum_y = np.bincount(groups, weights=y)
-    count_y = np.bincount(groups)
-    avg_y = sum_y / count_y
-    return avg_x, avg_y
+    gap_indices = np.concatenate(
+        [
+            [0],
+            np.where(diffs > threshold_ns)[0] + 1,
+            [n_total],
+        ]
+    )
+    window_indices = [
+        [int(g1), int(g2)] for g1, g2 in zip(gap_indices[:-1], gap_indices[1:])
+    ]
+    if avg_window > 1:
+        break_indices = [
+            list(range(i1, i2, avg_window)) + [i2] for i1, i2 in window_indices
+        ]
+        ## Just for reference, I tried this out too but there's no speed difference.
+        # times = np.concatenate(
+        #    [
+        #        np.concatenate(
+        #            [
+        #                (
+        #                    np.add.reduceat(
+        #                        _times[indices[0] : indices[-1]].astype(np.float64),
+        #                        (np.array(indices) - indices[0])[:-1],
+        #                    )
+        #                    / np.diff(indices)
+        #                ).astype(np.int64),
+        #                [np.nan],
+        #            ]
+        #        )
+        #        for indices in break_indices
+        #    ]
+        # )[:-1]
 
+        result = []
+        for indices in break_indices:
+            use_indices = np.array(indices) - indices[0]
+            temp = _times[indices[0] : indices[-1]]
+            temp = (
+                np.add.reduceat(
+                    temp.astype(np.float64),
+                    use_indices[:-1],
+                )
+                / np.diff(use_indices)
+            ).astype(np.int64)
+            result.append(temp)
+            result.append([pd.NaT])
 
-def average_segments(x_list, y_list, threshold, window):
-    x = np.array(x_list, dtype="datetime64[ns]")
-    y = np.array(y_list, dtype=float)
-    if len(x) == 0:
-        return x_list, y_list
-    diffs = np.diff(x)
-    gap_mask = diffs > np.timedelta64(threshold.value, "ns")
-    gap_indices = np.nonzero(gap_mask)[0] + 1
-    x_segments = np.split(x, gap_indices)
-    y_segments = np.split(y, gap_indices)
-    new_x, new_y = [], []
-    for seg_x, seg_y in zip(x_segments, y_segments):
-        avg_x, avg_y = average_contiguous_points(seg_x, seg_y, window)
-        new_x.extend(avg_x)
-        new_y.extend(avg_y)
-        new_x.append(None)
-        new_y.append(None)
-    if new_x:
-        new_x.pop()
-        new_y.pop()
-    return new_x, new_y
+        result.pop()
+        times = pd.to_datetime(np.concatenate(result))
+
+        result = []
+        for indices in break_indices:
+            use_indices = np.array(indices) - indices[0]
+            temp = _vals[indices[0] : indices[-1]]
+            temp = np.add.reduceat(
+                temp,
+                use_indices[:-1],
+            ) / np.diff(use_indices)
+            result.append(temp)
+            result.append([np.nan])
+
+        result.pop()
+        vals = np.concatenate(result)
+
+    else:
+        insert_indices = gap_indices[1:-1]
+
+        times = pd.to_datetime(
+            np.insert(
+                np.array(_times, dtype="datetime64[ns]"),
+                insert_indices,
+                [None] * len(insert_indices),
+            )
+        )
+        vals = np.insert(_vals, insert_indices, [np.nan] * len(insert_indices))
+
+    new_grp = pd.DataFrame({"Datetime": times, pollutant_col: vals})
+    return new_grp
 
 
 def _distribute_around_circle(group):
@@ -167,6 +195,7 @@ def _distribute_around_circle(group):
     return group
 
 
+# @timeit
 def adjust_facility_markers(df):
     group_cols = ["State", "Facility Name", "Year", "Latitude", "Longitude"]
     return (
@@ -174,6 +203,52 @@ def adjust_facility_markers(df):
         .apply(_distribute_around_circle)
         .reset_index(drop=True)
     )
+
+
+def get_facilities(start_date, end_date):
+    sy = datetime.strptime(start_date, "%Y-%m-%d").year
+    ey = datetime.strptime(end_date, "%Y-%m-%d").year
+    q = f"""
+    SELECT "State","Facility Name","Unit ID","Primary Fuel Type","Latitude","Longitude","Year"
+    FROM DF_ALL_FAC
+    WHERE "Year" >= '{sy}'
+      AND "Year" <= '{ey}'
+      AND "Latitude" IS NOT NULL
+      AND "Longitude" IS NOT NULL
+    """
+    df = query(q)
+    group_cols = ["State", "Facility Name", "Unit ID", "Latitude", "Longitude"]
+    df = (
+        df.groupby(group_cols, as_index=False)[df.columns]
+        .apply(lambda grp: grp[grp["Year"] == grp["Year"].max()])
+        .reset_index(drop=True)
+    )
+    return df
+
+
+def get_emissions(pollutant_col, state, plant, start_date, end_date):
+    sy, ey = pd.to_datetime(start_date).year, pd.to_datetime(end_date).year
+    plant_str = (
+        f"""\n      AND "Facility Name" = '{plant}'"""
+        if plant and plant != "ALL"
+        else ""
+    )
+    q = f"""\
+    SELECT "State", "Facility Name", "Unit ID", "Date", "Hour", "{pollutant_col}"
+    FROM {constants.EMISSIONS_TABLE}
+    WHERE "State" = '{state}'
+      AND "Year" >= {sy}
+      AND "Year" <= {ey}
+      AND "Operating Time" > 0.0
+      AND "Date" >= '{start_date}' AND "Date" <= '{end_date}'
+      AND "{pollutant_col}" IS NOT NULL {plant_str}
+    """
+    df = query(q)
+    df["Datetime"] = df["Date"] + pd.to_timedelta(df["Hour"], unit="h")
+    df = df.sort_values(["Facility Name", "Unit ID", "Datetime"]).drop(
+        columns=["Date", "Hour"]
+    )
+    return df
 
 
 def get_geojson_data(start_date, end_date):
@@ -198,78 +273,38 @@ def get_geojson_data(start_date, end_date):
     return {"type": "FeatureCollection", "features": features}
 
 
-# ------------------------------------------------------------------------------
-# MAP TILES, COLOR MAP FOR FUEL TYPES, ETC.
-# ------------------------------------------------------------------------------
+# Define the bare tile layer
+TILE = dl.TileLayer(
+    url="https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}{r}.jpg",
+    maxZoom=20,
+    attribution="""\
+&copy; CNES, Distribution Airbus DS, © Airbus DS, © PlanetObserver (Contains Copernicus Data)
+| &copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a>
+&copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a>
+&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors
+""",
+)
 
-
-def get_facilities(start_date, end_date):
-    sy = datetime.strptime(start_date, "%Y-%m-%d").year
-    ey = datetime.strptime(end_date, "%Y-%m-%d").year
-    q = f"""
-    SELECT "State","Facility Name","Unit ID","Primary Fuel Type","Latitude","Longitude","Year"
-    FROM {constants.FACILITIES_TABLE}
-    WHERE "Year" >= '{sy}' AND "Year" <= '{ey}'
-      AND "Latitude" IS NOT NULL AND "Longitude" IS NOT NULL
-    """
-    df = query(
-        q,
-        columns_and_types=constants.FACILITIES_COLUMNS_AND_TYPES,
-    )
-    group_cols = ["State", "Facility Name", "Unit ID", "Latitude", "Longitude"]
-    df = (
-        df.groupby(group_cols, as_index=False)[df.columns]
-        .apply(lambda grp: grp[grp["Year"] == grp["Year"].max()])
-        .reset_index(drop=True)
-    )
-    return df
-
-
-def get_emissions(pollutant_col, state, plant, start_date, end_date):
-    sy, ey = pd.to_datetime(start_date).year, pd.to_datetime(end_date).year
-    plant_str = (
-        f"""\
-      AND "Facility Name" = '{plant}'"""
-        if plant and plant != "ALL"
-        else ""
-    )
-    q = f"""\
-    SELECT "State","Facility Name","Unit ID","Date","Hour","{pollutant_col}"
-    FROM {constants.EMISSIONS_TABLE}
-    WHERE "State" = '{state}' AND "Year" >= {sy} AND "Year" <= {ey}
-      AND "Operating Time" > 0.0
-      AND "Date" >= '{start_date}' AND "Date" <= '{end_date}'
-      AND "{pollutant_col}" IS NOT NULL {plant_str}
-    """
-    df = query(
-        q,
-        columns_and_types=constants.EMISSIONS_COLUMNS_AND_TYPES,
-    )
-    df["Datetime"] = df["Date"] + pd.to_timedelta(df["Hour"], unit="h")
-    df = df.sort_values(["Facility Name", "Unit ID", "Datetime"]).drop(
-        columns=["Date", "Hour"]
-    )
-    return df
-
-
-# Precompute color map from an example "2023"
-
-plants_geojson_data = get_geojson_data("2023-01-01", "2023-12-31")
-
-# ------------------------------------------------------------------------------
 # JS logic for circle color, tooltip, etc.
-# ------------------------------------------------------------------------------
 point_to_layer = assign(
     """
     function(feature, latlng, context){
+        // Make a copy of the circle options
         const circleOptions = {...context.hideout.circleOptions};
+        // Pull out the colorMap we passed in via "hideout"
         const colorMap = context.hideout.colorMap;
         const fuelType = feature.properties.primary_fuel;
+
+        // If the fuel type is in our map, use that color; otherwise a fallback
         circleOptions.fillColor = colorMap[fuelType] || "#333333";
+
+        // Return a Leaflet circle marker
         return L.circleMarker(latlng, circleOptions);
     }
     """
 )
+
+# For a tooltip, we can keep it simple:
 on_each_feature = assign(
     """
     function(feature, layer){
@@ -284,9 +319,10 @@ on_each_feature = assign(
     """
 )
 
+# Empty data by default; will be populated in callbacks
 geojson = dl.GeoJSON(
     id="us-map-markers",
-    data={},
+    data=None,
     zoomToBounds=False,
     pointToLayer=point_to_layer,
     onEachFeature=on_each_feature,
@@ -297,9 +333,6 @@ geojson = dl.GeoJSON(
 )
 
 
-# ------------------------------------------------------------------------------
-# DASH APP & LAYOUT
-# ------------------------------------------------------------------------------
 app = Dash(__name__)
 app.title = "CAMPD Visualizer"
 
@@ -307,9 +340,11 @@ app.layout = html.Div(
     className="main-container",
     children=[
         html.H1("CAMPD Visualizer", className="header"),
+        # dcc.Store elements
         dcc.Store(id="date-store", data={"start_date": None, "end_date": None}),
         dcc.Store(id="plant-change-store", data={"fromMarker": False}),
         dcc.Store(id="state-change-store", data={"fromMarker": False}),
+        # Map
         dl.Map(
             id="us-map",
             center=[35, -100],
@@ -333,7 +368,7 @@ app.layout = html.Div(
                                 html.Br(),
                                 dcc.DatePickerSingle(
                                     id="start-date-picker",
-                                    date=date(2023, 11, 1),
+                                    date=date(2022, 11, 1),
                                 ),
                             ],
                         ),
@@ -402,9 +437,6 @@ app.layout = html.Div(
 )
 
 
-# ------------------------------------------------------------------------------
-# CALLBACKS
-# ------------------------------------------------------------------------------
 @app.callback(
     Output("us-map-markers", "data"),
     Output("us-map", "center"),
@@ -434,13 +466,10 @@ def update_map(
     elif plant and plant != "ALL" and state:
         q = f"""
         SELECT Latitude, Longitude
-        FROM {constants.FACILITIES_TABLE}
+        FROM DF_ALL_FAC
         WHERE "State"='{state}' AND "Facility Name"='{plant}'
         """
-        df = query(
-            q,
-            columns_and_types=constants.FACILITIES_COLUMNS_AND_TYPES,
-        )
+        df = query(q)
         lat = df["Latitude"].mean()
         lon = df["Longitude"].mean()
         new_center = [lat, lon]
@@ -449,18 +478,35 @@ def update_map(
         new_center = dash.no_update
         new_click_bool = dash.no_update
 
+    # Map Children
     dates_changed = (start_date != stored_dates.get("start_date")) or (
         end_date != stored_dates.get("end_date")
     )
+
     if start_date and end_date and dates_changed:
-        plants_geojson_data = get_geojson_data(start_date, end_date)
-        new_data = plants_geojson_data
+        new_plants_geojson_data = get_geojson_data(start_date, end_date)
         new_stored_dates = {"start_date": start_date, "end_date": end_date}
     else:
-        new_data = dash.no_update
+        new_plants_geojson_data = dash.no_update
         new_stored_dates = dash.no_update
 
-    return new_data, new_center, new_stored_dates, new_click_bool
+    print(
+        f"""
+    ### Inputs
+    plant = {plant}
+    start_date = {start_date}
+    end_date = {end_date}
+    state = {state}
+    stored_dates = {stored_dates}
+    click_bool = {click_bool}
+    ### Outputs
+    new_plants_geojson_data = TOO LONG
+    new_center = {new_center}
+    new_stored_dates = {new_stored_dates}
+    new_click_bool = {new_click_bool}
+    """
+    )
+    return new_plants_geojson_data, new_center, new_stored_dates, new_click_bool
 
 
 @app.callback(
@@ -507,6 +553,19 @@ def update_dropdown(
     else:
         new_click_bool = dash.no_update
 
+    print(
+        f"""
+    ### Inputs
+    state_val = {state_val}
+    start_date = {start_date}
+    end_date = {end_date}
+    click_bool = {click_bool}
+    ### Outputs
+    plant-dropdown.options = TOO LONG
+    plant-dropdown.value = {new_plant}
+    state-change-store = {new_click_bool}
+    """
+    )
     return plant_opts, new_plant, new_click_bool
 
 
@@ -527,6 +586,14 @@ def update_on_click(click_data):
     ]
     click_bool_plant = {"fromMarker": True}
     state_bool_plant = {"fromMarker": True}
+    print(
+        f"""
+    new_plant = {new_plant}
+    new_state = {new_state}
+    click_bool_plant = {click_bool_plant}
+    state_bool_plant = {state_bool_plant}
+    """
+    )
     return new_plant, new_state, click_bool_plant, state_bool_plant
 
 
@@ -548,6 +615,23 @@ def update_emissions_graph(
     start_date,
     end_date,
 ):
+    """
+    An updated version of update_emissions_graph that, for each facility (or grouping),
+    converts its sorted data into a NumPy array and then applies the vectorized segmentation
+    and averaging logic via process_grp_vectorized.
+
+    This approach reduces DataFrame overhead by minimizing per-row and per-group Python-level
+    operations and should help bring the speed closer to (or even surpass) that of the first approach.
+    """
+    print(
+        f"""
+    pollutant_col = {pollutant_col}
+    selected_state = {selected_state}
+    plant = {plant}
+    start_date = {start_date}
+    end_date = {end_date}
+    """
+    )
     if not (
         selected_state
         and plant is not None
@@ -560,11 +644,15 @@ def update_emissions_graph(
         return fig
 
     df = get_emissions(pollutant_col, selected_state, plant, start_date, end_date)
+    print(df.shape)
     if df.empty:
         title = "No data for this selection!"
         fig = go.Figure()
         fig.update_layout(
-            title=title, autosize=False, height=600, template="plotly_dark"
+            title=title,
+            autosize=False,
+            height=600,
+            template="plotly_dark",
         )
         return fig
 
@@ -579,10 +667,11 @@ def update_emissions_graph(
         df["Facility Full"] = df["Facility Name"] + ", " + df["Unit ID"].astype(str)
         grouping = "Facility Full"
 
-    threshold = df["Datetime"].diff().mode().squeeze()
+    # Use the mode of the datetime differences as the threshold for a gap.
     total_points = df.shape[0]
     avg_window = 1
     if total_points > MAX_PLOTLY_POINTS:
+        print(f"HAVE TO THIN DATA: {total_points} > {MAX_PLOTLY_POINTS}")
         avg_window = int(np.ceil(total_points / MAX_PLOTLY_POINTS))
         title += f" (Averaging Window: {avg_window} points)"
 
@@ -591,28 +680,20 @@ def update_emissions_graph(
     color_map = {k: palette[i % len(palette)] for i, k in enumerate(unique_keys)}
 
     fig = go.Figure()
-    for i, (key, grp) in enumerate(df.groupby(grouping)):
+    counter = 0
+    for key, grp in df.groupby(grouping):
+        print(counter)
         grp = grp.sort_values("Datetime")
-        hovertemplate = f"Facility: {key}<br>Date: %{{x|%Y-%m-%d %H:%M}}<br>{pollutant_col}: %{{y}}<extra></extra>"
-        if avg_window > 1:
-            new_x, new_y = average_segments(
-                grp["Datetime"].tolist(),
-                grp[pollutant_col].tolist(),
-                threshold,
-                avg_window,
-            )
-        else:
-            new_x, new_y = insert_gaps(
-                grp["Datetime"].tolist(),
-                grp[pollutant_col].tolist(),
-                threshold,
-            )
-        new_x = pd.Series(new_x)
-        new_y = pd.Series(new_y)
+        hovertemplate = (
+            f"Facility: {key}<br>Date: %{{x|%Y-%m-%d %H:%M}}<br>{pollutant_col}: %{{y}}"
+            "<extra></extra>"
+        )
+        # Use our vectorized function to process the group's data.
+        new_grp = process_grp_vectorized(grp, avg_window, pollutant_col)
         trace = go.Scattergl(
             mode="lines",
-            x=new_x,
-            y=new_y,
+            x=new_grp["Datetime"],
+            y=new_grp[pollutant_col],
             name=key,
             legendgroup=key,
             showlegend=True,
@@ -620,6 +701,7 @@ def update_emissions_graph(
             hovertemplate=hovertemplate,
         )
         fig.add_trace(trace)
+        counter += 1
 
     fig.update_layout(
         title=title,
@@ -632,8 +714,31 @@ def update_emissions_graph(
     return fig
 
 
-# ------------------------------------------------------------------------------
-# MAIN
-# ------------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run_server(debug=True)
+    # profiler = cProfile.Profile()
+    # profiler.enable()
+
+    # pollutant_col = "NOx Rate (lbs/mmBtu)"
+    # selected_state = "CA"
+    # plant = "ALL"
+    # start_date = "1995-01-01"
+    # end_date = "2025-12-31"
+
+    # try:
+    #    fig = update_emissions_graph(
+    #        pollutant_col,
+    #        selected_state,
+    #        plant,
+    #        start_date,
+    #        end_date,
+    #    )
+    #    fig.show()
+
+    # finally:
+    #    pass
+    #    profiler.disable()
+    #    profiler.dump_stats("profile_results.prof")
+
+    #    stats = pstats.Stats(profiler)
+    #    stats.strip_dirs().sort_stats("cumulative").print_stats(50)
