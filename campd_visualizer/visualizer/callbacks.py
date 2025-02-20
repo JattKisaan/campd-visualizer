@@ -3,13 +3,11 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from dash import Input, Output, State, callback_context, no_update
+from plotly import colors as pcolors
 
 from helpers import (MAX_PLOTLY_POINTS, average_segments, get_emissions,
                      get_facilities, get_geojson_data, insert_gaps, query,
                      timeit)
-
-# The Dash app object will be imported from app.py later
-# Make sure to define callbacks after the app is created
 
 
 def register_callbacks(app):

@@ -1,6 +1,5 @@
 import os
 
-import dash_leaflet as dl
 from dash import Dash
 
 from callbacks import register_callbacks
