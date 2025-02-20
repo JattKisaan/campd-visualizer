@@ -1,27 +1,35 @@
-# Load required library
 library(duckdb)
 
-# Set up DuckDB connection
-con <- dbConnect(duckdb::duckdb())
+con <- duckdb::dbConnect(duckdb::duckdb())
 
-# Define the path to your Parquet files
-data_dir <- "../data"
-emissions_parquet_glob <- paste0(data_dir, "/emissions_parquet_year/*/*.parquet")
-emissions_table <- paste0("read_parquet('", emissions_parquet_glob, "', hive_partitioning=TRUE)")
+emissions_query <- "
+  COPY (
+    SELECT \"State\", \"Facility Name\", \"Facility ID\", \"Unit ID\", \"Year\", \"Date\",
+      \"Hour\", \"Operating Time\", \"Gross Load (MW)\", \"NOx Mass (lbs)\",
+      \"NOx Mass Measure Indicator\", \"NOx Rate (lbs/mmBtu)\",
+      \"NOx Rate Measure Indicator\", \"Primary Fuel Type\", \"Secondary Fuel Type\",
+      \"Unit Type\", \"NOx Controls\"
+    FROM read_parquet('../data/emissions_parquet_year/*/*.parquet', hive_partitioning=True)
+    WHERE \"State\" = 'PA'
+      AND \"Operating Time\" > 0
+      AND \"Year\" = '2023'
+    ORDER BY \"Facility Name\", \"Unit ID\", \"Date\", \"Hour\"
+    LIMIT 10000
+  )
+  TO 'test.csv' (HEADER, DELIMITER ',');
+"
 
-# Query
-facilities_query <- sprintf("
-  SELECT DISTINCT State, \"Facility Name\"
-  FROM %s
-  WHERE State = 'AL' AND Year = '2023'
-  ORDER BY \"Facility Name\"
-", emissions_table)
+dbGetQuery(con, emissions_query)
 
-# Execute query and convert to a data frame
-df_facilities <- dbGetQuery(con, facilities_query)
+facilities_query <- "
+  SELECT *
+  FROM \"../data/all_facilities.csv\"
+  WHERE \"State\" = 'PA'
+    AND \"Year\" = '2023'
+"
 
-# Print the result
-print(df_facilities)
+df <- dbGetQuery(con, facilities_query)
+print(df)
 
 # Disconnect
-dbDisconnect(con)
+duckdb::dbDisconnect(con)
