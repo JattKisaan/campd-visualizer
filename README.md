@@ -24,8 +24,7 @@ neither the views nor work of the EPA in any way.
 You'll need `python` installed, and `conda` to create the environment I use. On Linux,
 you need at least 8GB of RAM, I'd up that to 16GB for Windows. I primarily use Linux, so
 I know all this works pretty well there. I tested this in Windows, but not all that
-much. If you use Windows, maybe
-[don't](https://ubuntu.com/tutorials/install-ubuntu-desktop#1-overview)? 🙃
+much.
 
 You will also have to install this python package as well so that python knows where to
 look to execute the import statements. You can do this by navigating to the root
@@ -182,6 +181,14 @@ After you succesfully run this script and build your optimized dataset, feel fre
 delete the `campd_visualizer/data/emissions_parquet_year_temp` directory which has the
 unoptimized tiny files. This will get you some disk space back.
 
+# Running SQL Queries on the Parquet Dataset
+
+I have a included a `python` and `R` script that show you how to issue an `SQL` query to
+the parquet dataset. They are located here, and you can tinker with them if you like:
+
+    campd_visualizer/scripts/duckquery.py
+    campd_visualizer/scripts/duckquery.R
+
 # Visualize the Data
 
 With the dataset built, you can navigate to
@@ -195,11 +202,4 @@ hand.
 
 You may be able to learn some things from the `Dash` app. The callbacks take some
 experience getting used to if you've never done anything like it before. I'm alright
-with the implementation so far, with the exception of the `CircleMarker` objects.
-Whenever the start or end dates are changed, these have to be redrawn, and some [light
-searching](https://www.google.com/search?q=circlemarker+slow+update+dash-leaflet&rlz=1C1GCEA_enUS1141US1141&oq=circlemarker+slow+update+dash-leaflet&gs_lcrp=EgZjaHJvbWUyBggAEEUYOdIBCDkxODJqMGo5qAIAsAIB&sourceid=chrome&ie=UTF-8)
-suggested that this is quite slow. I have noticed this to be a really annoying issue,
-especially on laptops of normal computational power. The consensus seems that a much
-faster approach would be to use
-[GeoJSON](https://www.dash-leaflet.com/docs/geojson_tutorial) to draw these points on
-the map. Perhaps I'll get around to fixing this at some point.
+with the implementation so far.
