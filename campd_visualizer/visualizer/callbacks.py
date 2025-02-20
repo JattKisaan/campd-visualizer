@@ -57,8 +57,7 @@ def register_callbacks(app):
             end_date != stored_dates.get("end_date")
         )
         if start_date and end_date and dates_changed:
-            plants_geojson_data = get_geojson_data(start_date, end_date)
-            new_data = plants_geojson_data
+            new_data = get_geojson_data(start_date, end_date)
             new_stored_dates = {"start_date": start_date, "end_date": end_date}
         else:
             new_data = no_update

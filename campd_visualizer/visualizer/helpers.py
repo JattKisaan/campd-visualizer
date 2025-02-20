@@ -4,6 +4,7 @@ from datetime import datetime
 import campd_visualizer.pkg.constants as constants
 import duckdb
 import matplotlib as mpl
+import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 
@@ -56,7 +57,7 @@ DISTINCT_FUELS = np.sort(
 
 n = len(DISTINCT_FUELS)
 colors_list = mpl.colormaps["viridis"].resampled(n)
-colors_list = [colors_list(i) for i in range(n)]
+colors_list = [mcolors.to_hex(colors_list(i)) for i in range(n)]
 FUEL_COLORS_DICT = dict(zip(DISTINCT_FUELS, colors_list))
 
 POLLUTANT_OPTIONS = {

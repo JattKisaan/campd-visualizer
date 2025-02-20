@@ -48,7 +48,7 @@ on_each_feature = assign(
 # Empty data by default; will be populated in callbacks
 geojson = dl.GeoJSON(
     id="us-map-markers",
-    data={},
+    data=None,
     zoomToBounds=False,
     pointToLayer=point_to_layer,
     onEachFeature=on_each_feature,
