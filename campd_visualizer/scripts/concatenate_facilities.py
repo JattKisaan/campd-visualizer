@@ -27,8 +27,6 @@ def concat_facility_zips_to_csv(zip_files, out_csv):
                             out_f.write(lines[1])
 
     df = pd.read_csv(out_csv)
-    ## Probably not worth doing this
-    # df.drop_duplicates(subset=[c for c in df.columns if c != "Year"])
     df.sort_values(by=["State", "Facility Name", "Unit ID", "Year"]).reset_index(
         drop=True
     ).to_csv(out_csv, index=False)
@@ -43,13 +41,3 @@ if __name__ == "__main__":
 
     print("Concatenating facility zip CSVs into one CSV...")
     concat_facility_zips_to_csv(facilities_zip_files, facilities_csv_out)
-
-    df_facilities = pd.read_csv(facilities_csv_out)
-    facilities_query = """
-      SELECT *
-      FROM df_facilities
-    """
-    print("Facilities DuckDB Query:\n", facilities_query)
-    df_facilities = duckdb.query(facilities_query).to_df()
-    print("Facilities Query result (first 10 rows):")
-    print(df_facilities.head(10))
