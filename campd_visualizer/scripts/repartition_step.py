@@ -1,5 +1,3 @@
-# parted_step.py
-
 import gc
 import os
 import shutil
@@ -11,7 +9,7 @@ def repartition_one_subdir(in_dir, out_dir, partition_size="100MB", delete_input
     """
     Read Parquet files in `in_dir`, repartition to `partition_size`,
     write them to `out_dir`, optionally delete `in_dir`.
-    Called as a separate process from parted_master.py
+    Called as a separate process from repartion_master.py
     """
     if not os.path.exists(in_dir):
         print(f"[Child] Subdir {in_dir} does not exist.")
@@ -40,4 +38,4 @@ def repartition_one_subdir(in_dir, out_dir, partition_size="100MB", delete_input
     gc.collect()
 
 
-print("[Child] parted_step.py loaded.")
+print("[Child] repartition_step.py loaded.")

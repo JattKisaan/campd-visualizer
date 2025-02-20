@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 """
-parted_master.py
-
 Enumerates each subdirectory in `in_dir` containing Parquet files,
 and spawns a separate Python process for each, calling
 repartition_one_subdir(...) in repartition_step.py.
@@ -16,7 +14,7 @@ import subprocess
 import sys
 
 
-def parted_repartition_whole_dataset(
+def repartition_whole_dataset(
     in_dir,
     out_dir,
     partition_size="5_000MB",
@@ -60,7 +58,6 @@ def parted_repartition_whole_dataset(
 
 
 def main():
-    # You can hardcode your paths or logic here
     IN_DIR = "../data/emissions_parquet_year_temp"
     OUT_DIR = "../data/emissions_parquet_year"
 
@@ -68,7 +65,7 @@ def main():
     PARTITION_SIZE = "100_000MB"
     DELETE_INPUT = False
 
-    parted_repartition_whole_dataset(
+    repartition_whole_dataset(
         in_dir=IN_DIR,
         out_dir=OUT_DIR,
         partition_size=PARTITION_SIZE,
