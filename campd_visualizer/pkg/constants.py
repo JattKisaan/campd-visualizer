@@ -7,7 +7,7 @@ emissions_parquet_glob = os.path.join(
     DATA_DIR, "emissions_parquet_year", "*", "*.parquet"
 )
 EMISSIONS_TABLE = f"read_parquet('{emissions_parquet_glob}', hive_partitioning=True)"
-FACILITIES_TABLE = f'"{os.path.join(DATA_DIR, "all_facilities.csv")}"'
+FACILITIES_TABLE = f'''"{os.path.join(DATA_DIR, 'all_facilities.csv')}"'''
 
 TYPE_DICT = {
     "pandas": {
