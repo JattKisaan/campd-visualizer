@@ -22,8 +22,8 @@ def repartition_one_subdir(in_dir, out_dir, partition_size="100MB", delete_input
         f"[Child] Repartitioning {in_dir} -> {out_dir}, partition_size={partition_size}"
     )
     df = dd.read_parquet(in_dir, engine="pyarrow")
-    df2 = df.repartition(partition_size=partition_size)
-    df2.to_parquet(
+    df = df.repartition(npartitions=1)
+    df.to_parquet(
         out_dir,
         engine="pyarrow",
         overwrite=True,
@@ -34,7 +34,6 @@ def repartition_one_subdir(in_dir, out_dir, partition_size="100MB", delete_input
         shutil.rmtree(in_dir)
 
     del df
-    del df2
     gc.collect()
 
 

@@ -62,7 +62,7 @@ def main():
     OUT_DIR = "../data/emissions_parquet_year"
 
     # e.g. "5_000MB" by default, or override to "100_000MB" if desired
-    PARTITION_SIZE = "100_000MB"
+    PARTITION_SIZE = "1000MB"
     DELETE_INPUT = False
 
     repartition_whole_dataset(
