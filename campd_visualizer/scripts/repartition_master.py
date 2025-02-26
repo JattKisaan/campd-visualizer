@@ -13,11 +13,12 @@ import shutil
 import subprocess
 import sys
 
+os.environ["PYTHONBREAKPOINT"] = "IPython.embed"
 
 def repartition_whole_dataset(
     in_dir,
     out_dir,
-    partition_size="5_000MB",
+    npartitions=3,
     delete_input=False,
 ):
     if not os.path.exists(in_dir):
@@ -39,6 +40,7 @@ def repartition_whole_dataset(
             if has_parquet:
                 subdirs.append(entry.name)
 
+    subdirs = [subdir for subdir in subdirs if int(subdir.split("=")[1]) >= 2008]
     for sub in sorted(subdirs):
         part_in_dir = os.path.join(in_dir, sub)
         part_out_dir = os.path.join(out_dir, sub)
@@ -49,7 +51,7 @@ def repartition_whole_dataset(
             f" repartition_step.repartition_one_subdir("
             f"'{part_in_dir}', "
             f"'{part_out_dir}', "
-            f"'{partition_size}', "
+            f"{npartitions}, "
             f"{delete_input}"
             ")"
         )
@@ -61,14 +63,14 @@ def main():
     IN_DIR = "../data/emissions_parquet_year_temp"
     OUT_DIR = "../data/emissions_parquet_year"
 
-    # e.g. "5_000MB" by default, or override to "100_000MB" if desired
-    PARTITION_SIZE = "1000MB"
+    # e.g. 1 is ideal for this dataset, probably, but requires more memory
+    NPARTITIONS = 3
     DELETE_INPUT = False
 
     repartition_whole_dataset(
         in_dir=IN_DIR,
         out_dir=OUT_DIR,
-        partition_size=PARTITION_SIZE,
+        npartitions=NPARTITIONS,
         delete_input=DELETE_INPUT,
     )
 
