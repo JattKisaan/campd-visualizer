@@ -168,14 +168,12 @@ recreate files of a more optimal size. This is accomplished by
     campd_visualizer/scripts/repartition_master.py
 
 How long it takes depends on your hardware, so maybe 25min to 3hrs. In this file, you
-may need to set the `PARTITION_SIZE` parameter towards the bottom of the file. This is a
-hardware dependent parameter, and I believe it reflects how much RAM the parquet writer
-can use when creating a file. If it hits this value, then it will write what it has to
-file and start another. So your hardware will limit the largest file you can write. To
-get all of the data for each year into a single file, I think you need about 30GB of
-RAM. I have 128GB, so I didn't really think too much about it. When building on a laptop
-with only 16GB of RAM, I had to set this parameter to 5000MB to not max out the system
-RAM, and this generates about 2-4 files per year.
+may need to set the `NPARTITIONS` parameter towards the bottom of the file. This is a
+hardware dependent parameter; the more RAM you have the lower you can set this. It 
+controls how many files each year of data is split into. I have 128GB RAM and a 
+i9-12900k processor, so I can fit each year of data into 1 file. A 16GB RAM work laptop
+managed to get some years into 1 file, but ran out of memory on other years. I'd 
+recommend to set this to 3 or 4 on lesser hardware than mine.
 
 After you succesfully run this script and build your optimized dataset, feel free to
 delete the `campd_visualizer/data/emissions_parquet_year_temp` directory which has the
