@@ -27,7 +27,7 @@ def stream_csvs(list_of_year_files, convert_options):
             with zipfile.ZipFile(zpath, "r") as zf:
                 # Read the first CSV file from the zip.
                 with zf.open(zf.namelist()[0]) as f:
-                    csv_reader = pa.csv.open_csv(f, read_options = pa.csv.ReadOptions(block_size=10**8), convert_options=convert_options,)
+                    csv_reader = pa.csv.open_csv(f, convert_options=convert_options)
                     for rb in csv_reader:
                         year_array = pc.year(rb.column("Date")).cast(pa.int32())
                         rb = rb.append_column("Year", year_array)
@@ -86,10 +86,12 @@ def make_parquet_from_zip_files(
         format="parquet",
         partitioning=[
             "Year",
-            # "State",
+            "State",
         ],
         partitioning_flavor="hive",
         existing_data_behavior="overwrite_or_ignore",
+        min_rows_per_group = 10**5,
+        max_rows_per_group = 10**6,
     )
     print(f"Partitioned dataset written to: {out_dir}")
 
