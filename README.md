@@ -180,7 +180,7 @@ With the dataset built, you can navigate to
 and run it. The output will give you a link to open the dashboard in the browser. Have
 fun exploring. 
 
-![missing screenshot](images/visualizer.png)
+![missing screenshot](./images/visualizer.png)
 
 Please treat the dashboard as a mere starting point; any competent data
 scientist would use such a tool and customize it for whatever kind of analysis is at
