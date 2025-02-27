@@ -92,6 +92,7 @@ def make_parquet_from_zip_files(
         existing_data_behavior="overwrite_or_ignore",
         min_rows_per_group = 10**5,
         max_rows_per_group = 10**6,
+        max_open_files = 3000,
     )
     print(f"Partitioned dataset written to: {out_dir}")
 
