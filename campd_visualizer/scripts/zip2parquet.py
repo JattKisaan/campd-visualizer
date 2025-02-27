@@ -101,9 +101,9 @@ if __name__ == "__main__":
 
     emissions_zip_pattern = os.path.join(DATA_DIR, "emissions-hourly*.zip")
     emissions_zip_files = sorted(glob.glob(emissions_zip_pattern))
-    emissions_out_dir_temp = os.path.join(DATA_DIR, "emissions_parquet_year_temp")
+    emissions_out_dir = os.path.join(DATA_DIR, "emissions_parquet_year")
 
     make_parquet_from_zip_files(
         zip_files=emissions_zip_files,
-        out_dir=emissions_out_dir_temp,
+        out_dir=emissions_out_dir,
     )
