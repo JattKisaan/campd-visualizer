@@ -143,41 +143,25 @@ facility data. Then, run
     campd_visualizer/scripts/zip2parquet.py
 
 to create a parquet dataset with the data partitioned by year. How long it takes depends
-on your hardware, so maybe 25min to 3hrs. But the parquet dataset is itself not really a
+on your hardware, so maybe 10min to an hour. 
+But the parquet dataset is itself not really a
 unique end point. What I mean is that although the data has been partitioned by year
-into different folders, if you look in them, you'll see a horrendously large number of
-files. A parquet reader would now need to look at each of these files, examine the
-metadata, and decide whether or not it needs to be read, and if so, where. So there is a
-cost to having files that are too small. On the other hand, there is a cost to having
+into different folders, the data could still be split into a different number of
+files, and those files could be subdivided into different numbers of so-called `row-groups`. A parquet reader would now need to look at each of these files, examine the
+metadata, and decide whether or not it needs to be read, and if so, use row-group metadata to find which row-groups to read. So there is a
+cost to having files that are too small, because all of these decisions increase. On the other hand, there is a cost to having
 the data in too few files, because in that case a larger file must be opened up and
 examined, and if only a little bit of data is needed, there can be a lot of wasted
 effort.
 
 So a balance is needed. I read somewhere that the individual files should probably be
 between 20MB and 2GB. When this dataset is partitioned by Year alone, the directory
-contains about 200MB of data, which can comfortably fit in a single file. If we
-paritioned by Year and by State, this would create about 1500 files, each about 4MB. For
-this reason, I decided to partition only on Year. The performance seems good enough, for
-now at least.
-
-Next, to address the fact that all of these tiny files were created, the common solution
-is to repartition the dataset. Meaning, once the dataset has been created with
-unoptimized file sizes, it can then be remade, using this as a starting point, to
-recreate files of a more optimal size. This is accomplished by
-
-    campd_visualizer/scripts/repartition_master.py
-
-How long it takes depends on your hardware, so maybe 25min to 3hrs. In this file, you
-may need to set the `NPARTITIONS` parameter towards the bottom of the file. This is a
-hardware dependent parameter; the more RAM you have the lower you can set this. It 
-controls how many files each year of data is split into. I have 128GB RAM and a 
-i9-12900k processor, so I can fit each year of data into 1 file. A 16GB RAM work laptop
-managed to get some years into 1 file, but ran out of memory on other years. I'd 
-recommend to set this to 3 or 4 on lesser hardware than mine.
-
-After you succesfully run this script and build your optimized dataset, feel free to
-delete the `campd_visualizer/data/emissions_parquet_year_temp` directory which has the
-unoptimized tiny files. This will get you some disk space back.
+contains about 300MB of data, which can comfortably fit in a single file. If we
+paritioned by Year and by State, this would create about 1500 files, each about 6MB or so. For
+this reason, I partition only on Year. But because almost every query 
+filters on State, I would guess that this case should be an exception to the general rule? 
+It's worth benchmarking somehow, but I probably won't get to that. And there are some annoying
+OS issues if you try and open more than 1024 files, so I'll stick to partitioning on Year alone.
 
 # Running SQL Queries on the Parquet Dataset
 
@@ -194,7 +178,11 @@ With the dataset built, you can navigate to
     campd_visualizer/visualizer/app.py
 
 and run it. The output will give you a link to open the dashboard in the browser. Have
-fun exploring. Please treat the dashboard as a mere starting point; any competent data
+fun exploring. 
+
+![missing screenshot](images/visualizer.png)
+
+Please treat the dashboard as a mere starting point; any competent data
 scientist would use such a tool and customize it for whatever kind of analysis is at
 hand.
 
